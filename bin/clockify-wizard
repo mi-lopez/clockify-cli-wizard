@@ -1,0 +1,36 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+// Try to find the autoloader
+$autoloadPaths = [
+    __DIR__ . '/../vendor/autoload.php',
+    __DIR__ . '/../../../autoload.php',
+    __DIR__ . '/../../autoload.php',
+    __DIR__ . '/../autoload.php',
+];
+
+$autoloadFound = false;
+foreach ($autoloadPaths as $path) {
+    if (file_exists($path)) {
+        require_once $path;
+        $autoloadFound = true;
+        break;
+    }
+}
+
+if (!$autoloadFound) {
+    fwrite(STDERR, "Could not find autoloader. Please run 'composer install'.\n");
+    exit(1);
+}
+
+use MiLopez\ClockifyWizard\Console\Application;
+use MiLopez\ClockifyWizard\Helper\TimeHelper;
+
+// Initialize timezone at the very beginning
+TimeHelper::initializeTimezone('America/Santiago');
+
+// Create and run the application
+$application = new Application();
+$application->run();

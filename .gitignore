@@ -1,0 +1,48 @@
+# Dependencies
+/vendor/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Testing
+/coverage/
+/tests/results/
+/.phpunit.result.cache
+
+# PHP CS Fixer
+/.php-cs-fixer.cache
+
+# PHPStan
+/.phpstan.cache
+
+# Composer
+composer.lock
+
+# Configuration files (security)
+/.clockify-cli-config.json
+/config.json
+
+# Build artifacts
+/build/
+/dist/
+
+# Logs
+*.log
+/logs/
+
+# Cache
+/cache/
+/.cache/
+
+# Temporary files
+/tmp/
+/temp/
+*.tmp
