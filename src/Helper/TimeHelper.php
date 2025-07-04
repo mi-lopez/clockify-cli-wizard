@@ -191,14 +191,14 @@ class TimeHelper
     public static function getDurationSuggestions(): array
     {
         return [
-            '30m' => '30 minutos',
-            '1h' => '1 hora',
-            '1h30m' => '1.5 horas',
-            '2h' => '2 horas',
-            '3h' => '3 horas',
-            '4h' => '4 horas',
-            '6h' => '6 horas',
-            '8h' => '8 horas',
+            '30m' => '30 minutes',
+            '1h' => '1 hour',
+            '1h30m' => '1.5 hours',
+            '2h' => '2 hours',
+            '3h' => '3 hours',
+            '4h' => '4 hours',
+            '6h' => '6 hours',
+            '8h' => '8 hours',
         ];
     }
 
