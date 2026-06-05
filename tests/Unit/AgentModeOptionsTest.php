@@ -25,6 +25,8 @@ class AgentModeOptionsTest extends TestCase
         $this->assertTrue($def->hasOption('json'));
         $this->assertTrue($def->hasOption('dry-run'));
         $this->assertTrue($def->hasOption('project'));
+        $this->assertTrue($def->hasOption('summary'));
+        $this->assertTrue($def->hasOption('no-jira'));
     }
 
     public function testStartHasAgentOptions(): void

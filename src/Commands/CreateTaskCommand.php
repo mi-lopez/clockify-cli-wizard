@@ -42,6 +42,8 @@ class CreateTaskCommand extends Command
             ->addOption('project', 'p', InputOption::VALUE_REQUIRED, 'Clockify project ID or name')
             ->addOption('task-name', 't', InputOption::VALUE_REQUIRED, 'Custom task name')  // Changed from 'name' to 'task-name' and shortcut from 'n' to 't'
             ->addOption('status', 's', InputOption::VALUE_REQUIRED, 'Task status (ACTIVE/DONE)', 'ACTIVE')
+            ->addOption('summary', null, InputOption::VALUE_REQUIRED, 'Ticket summary; builds "TICKET-ID summary" without querying Jira')
+            ->addOption('no-jira', null, InputOption::VALUE_NONE, 'Never query Jira (use --summary/--task-name and --project instead)')
             ->addOption('json', null, InputOption::VALUE_NONE, 'Output result as JSON (non-interactive)')
             ->addOption('dry-run', null, InputOption::VALUE_NONE, 'Show what would be created without writing to Clockify')
             ->setHelp('
@@ -57,8 +59,12 @@ Create a new task in Clockify:
   clockify-wizard create-task CAM-451 --project "My Project" --json
   clockify-wizard create-task CAM-451 --dry-run
 
+<info>Skip the Jira lookup (you already know the summary):</info>
+  clockify-wizard create-task CAM-451 --project "My Project" --summary "Fix checkout" --no-jira --json
+  # → creates task "CAM-451 Fix checkout" with no call to Jira
+
 <info>The command will:</info>
-  • Fetch ticket info from Jira (if configured)
+  • Fetch the summary from Jira only when needed (skipped with --summary/--no-jira)
   • Create task with format "TICKET-ID Summary"
   • Associate with correct Clockify project (flag or saved mapping)
             ');
@@ -141,9 +147,24 @@ Create a new task in Clockify:
         bool $dryRun
     ): int {
         try {
-            $ticketInfo = $this->fetchTicketSilently($ticketId);
+            $summary = $input->getOption('summary');
+            $noJira = (bool) $input->getOption('no-jira');
+
+            // The only thing Jira gives us here is the summary for the task name.
+            // If the caller already provides a name (--task-name/--summary) or
+            // forbids Jira, skip the lookup entirely.
+            $needJira = !$noJira && !$customName && ($summary === null || $summary === '');
+            $ticketInfo = $needJira ? $this->fetchTicketSilently($ticketId) : null;
+
             $projectKey = $ticketInfo['fields']['project']['key'] ?? $this->projectKeyFromTicket($ticketId);
-            $taskName = $customName ?: $this->generateTaskName($ticketId, $ticketInfo);
+
+            if ($customName) {
+                $taskName = $customName;
+            } elseif ($summary !== null && $summary !== '') {
+                $taskName = "{$ticketId} {$summary}";
+            } else {
+                $taskName = $this->generateTaskName($ticketId, $ticketInfo);
+            }
 
             $project = $this->resolveProjectNonInteractive($ticketId, $projectKey, $projectOption);
 

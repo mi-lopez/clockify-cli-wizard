@@ -257,12 +257,22 @@ be billed against it:
 # 1) Create the Jira ticket (jira-cli-wizard, also non-interactive)
 KEY=$(jira-wizard create --project CAM --type Task --summary "New endpoint")
 
-# 2) Mirror it as a Clockify task (idempotent: returns existing if already there)
-clockify-wizard create-task "$KEY" --json     # {"id":...,"existed":false,...}
+# 2) Mirror it as a Clockify task (idempotent: returns existing if already there).
+#    You already know the summary and project from step 1, so skip the Jira lookup:
+clockify-wizard create-task "$KEY" --project "My Project" \
+  --summary "New endpoint" --no-jira --json     # {"id":...,"existed":false,...}
 
 # 3) Register billable time against it
 clockify-wizard log 2h --task "$KEY" --json
 ```
+
+> **`--summary` / `--no-jira`:** by default `create-task` fetches the summary from
+> Jira to build the task name `"KEY summary"`. When you already have the summary
+> (e.g. straight from the `jira-wizard create` step), pass `--summary "<text>"`
+> to build the name locally and `--no-jira` to make zero Jira calls. This also
+> matters when **one Jira project maps to several Clockify projects** (e.g. routed
+> by epic): there is no 1-to-1 mapping that fits, so pass `--project` explicitly
+> per ticket and keep the routing rule in your own runbook/skill.
 
 ## 🎯 Advanced Usage
 

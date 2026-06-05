@@ -49,6 +49,18 @@ clockify-wizard create-task CAM-451 --project "My Clockify Project" --json
 # → {"id":"...","name":"CAM-451 ...","projectId":"...","existed":false, ...}
 ```
 
+If you just created the ticket and already know its summary, skip the Jira
+lookup (faster, and required when one Jira project maps to several Clockify
+projects so you must choose `--project` yourself):
+
+```bash
+clockify-wizard create-task CAM-451 --project "My Clockify Project" \
+  --summary "Fix checkout" --no-jira --json     # name = "CAM-451 Fix checkout"
+```
+
+Note: the task name must match exactly to be idempotent — pass the **full**
+summary you used in Jira, not a shortened one.
+
 ## 4. Register time — two flows (both billable)
 
 ### A. Measured duration (recommended for agents)
