@@ -168,13 +168,94 @@ clockify-wizard reports --period month --group-by project --export monthly.csv
 | `configure` | Setup wizard for Clockify and Jira | `config`, `setup` |
 | `start` | Start a timer for time tracking | `begin` |
 | `stop` | Stop the active timer | `end` |
+| `pause` | Pause the running timer (stop + remember) | |
+| `resume` | Resume a paused timer | |
 | `log` | Log time with smart detection | `l` |
 | `today` | Show today's time summary | `td` |
 | `week` | Show weekly time summary | `wk` |
 | `create-task` | Create task from Jira ticket | `task` |
-| `list-tasks` | List tasks from projects | `tasks`, `ls` |
+| `list` | List resources as JSON (agents/scripts) | |
+| `list-tasks` | List tasks from projects (table) | `tasks`, `ls` |
+| `map` | Map a Jira project key to a Clockify project | |
 | `reports` | Generate detailed reports | `report` |
 | `status` | Show current status and config | `info` |
+
+## 🤖 Non-interactive / AI agent mode
+
+Every command an automation or AI agent needs can run **without prompts** and
+emit **JSON**, so the same Jira ⇄ Clockify workflow a human uses can be driven
+end-to-end by a script or agent.
+
+How it activates:
+
+- Pass `--json` (recommended) — suppresses banners/prompts and prints a single
+  JSON object to stdout. Errors are printed as `{"error": "..."}` with a non-zero
+  exit code.
+- Or run under `--no-interaction` (`-n`) — same non-interactive behavior with a
+  minimal id on stdout.
+- `--dry-run` (on `create-task`, `start`, `log`) shows what *would* be written
+  without touching Clockify — a safety net against double-billing.
+
+In non-interactive mode there are no prompts, so the Clockify **project must be
+resolvable** from a `--project` flag or a saved Jira→Clockify mapping (see
+[Project Mapping](#project-mapping)). Otherwise the command fails with a clear
+message instead of hanging.
+
+### Discovery (`list`)
+
+```bash
+clockify-wizard list                         # available resources
+clockify-wizard list projects                # [{id,name,clientName,archived}]
+clockify-wizard list tasks --project "API"   # [{id,name,status,projectId}]
+clockify-wizard list tags                    # [{id,name}]
+clockify-wizard list workspaces              # [{id,name}]
+clockify-wizard list current                 # running timer (or {"running":false})
+```
+
+### One-time mapping (`map`)
+
+So unattended `create-task`/`log`/`start` can resolve the project automatically:
+
+```bash
+clockify-wizard map CAM "My Clockify Project"   # persist CAM → project
+clockify-wizard map                              # list current mappings
+```
+
+### Two billing flows for agents
+
+Both are supported — pick per situation:
+
+```bash
+# 1) Measured duration (recommended for agents): the agent measures how long the
+#    task took and logs that explicit duration. No dangling timer.
+clockify-wizard log 1h30m --task CAM-451 --tags "ai-agent" --json
+
+# 2) Live timer (real wall-clock): start when work begins, stop when done.
+clockify-wizard start CAM-451 --tags "ai-agent" --json
+# ... work ...
+clockify-wizard stop --json
+clockify-wizard pause --json     # Clockify has no native pause: stop + remember
+clockify-wizard resume --json    # restart the paused timer
+```
+
+`--tags` accepts a comma-separated list of labels and creates any that don't
+exist yet.
+
+### Combined Jira → Clockify recipe
+
+The PM/agent creates the Jira ticket, then mirrors it into Clockify so time can
+be billed against it:
+
+```bash
+# 1) Create the Jira ticket (jira-cli-wizard, also non-interactive)
+KEY=$(jira-wizard create --project CAM --type Task --summary "New endpoint")
+
+# 2) Mirror it as a Clockify task (idempotent: returns existing if already there)
+clockify-wizard create-task "$KEY" --json     # {"id":...,"existed":false,...}
+
+# 3) Register billable time against it
+clockify-wizard log 2h --task "$KEY" --json
+```
 
 ## 🎯 Advanced Usage
 

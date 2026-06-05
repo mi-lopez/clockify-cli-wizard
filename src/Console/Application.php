@@ -6,9 +6,13 @@ namespace MiLopez\ClockifyWizard\Console;
 
 use MiLopez\ClockifyWizard\Commands\ConfigureCommand;
 use MiLopez\ClockifyWizard\Commands\CreateTaskCommand;
+use MiLopez\ClockifyWizard\Commands\ListCommand;
 use MiLopez\ClockifyWizard\Commands\ListTasksCommand;
 use MiLopez\ClockifyWizard\Commands\LogTimeCommand;
+use MiLopez\ClockifyWizard\Commands\MapCommand;
+use MiLopez\ClockifyWizard\Commands\PauseCommand;
 use MiLopez\ClockifyWizard\Commands\ReportsCommand;
+use MiLopez\ClockifyWizard\Commands\ResumeCommand;
 use MiLopez\ClockifyWizard\Commands\StartCommand;
 use MiLopez\ClockifyWizard\Commands\StatusCommand;
 use MiLopez\ClockifyWizard\Commands\StopCommand;
@@ -29,9 +33,13 @@ class Application extends BaseApplication
             new LogTimeCommand(),
             new StartCommand(),
             new StopCommand(),
+            new PauseCommand(),
+            new ResumeCommand(),
             new StatusCommand(),
             new CreateTaskCommand(),
+            new ListCommand(),
             new ListTasksCommand(),
+            new MapCommand(),
             new TodayCommand(),
             new WeekCommand(),
             new ReportsCommand(),

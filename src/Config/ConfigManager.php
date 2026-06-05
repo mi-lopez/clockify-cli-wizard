@@ -120,6 +120,32 @@ class ConfigManager
         $this->setConfig($config);
     }
 
+    /**
+     * Snapshot of a timer that was paused. Clockify has no native pause, so we
+     * stop the running timer and remember its context here so `resume` can
+     * restart it with the same project/task/description/tags.
+     */
+    public function savePausedTimer(array $timerData): void
+    {
+        $config = $this->getConfig();
+        $config['paused_timer'] = $timerData;
+        $this->setConfig($config);
+    }
+
+    public function getPausedTimer(): ?array
+    {
+        $config = $this->getConfig();
+
+        return $config['paused_timer'] ?? null;
+    }
+
+    public function clearPausedTimer(): void
+    {
+        $config = $this->getConfig();
+        unset($config['paused_timer']);
+        $this->setConfig($config);
+    }
+
     private function loadConfig(): void
     {
         if (!$this->filesystem->exists($this->configPath)) {

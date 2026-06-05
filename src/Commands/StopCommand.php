@@ -42,6 +42,7 @@ class StopCommand extends Command
         $this
             ->addOption('time', 't', InputOption::VALUE_REQUIRED, 'Stop time (e.g., 17:30, 5:30pm, now)')
             ->addOption('debug', null, InputOption::VALUE_NONE, 'Show debug information')
+            ->addOption('json', null, InputOption::VALUE_NONE, 'Output result as JSON (non-interactive)')
             ->setHelp('
 Stop the active timer:
 
@@ -49,6 +50,10 @@ Stop the active timer:
   clockify-wizard stop
   clockify-wizard stop --time 17:30
   clockify-wizard stop --time "5:30pm"
+
+<info>Non-interactive (AI agents / scripts):</info>
+  clockify-wizard stop --json
+  clockify-wizard stop --time 17:30 --json
 
 <info>The command will:</info>
   • Stop the currently running timer
@@ -61,6 +66,12 @@ Stop the active timer:
     {
         try {
             $this->initializeClient();
+
+            $json = (bool) $input->getOption('json');
+
+            if ($json || !$input->isInteractive()) {
+                return $this->executeNonInteractive($input, $output, $json);
+            }
 
             $debug = $input->getOption('debug');
 
@@ -108,6 +119,63 @@ Stop the active timer:
 
             return Command::FAILURE;
         }
+    }
+
+    /**
+     * Non-interactive path for AI agents / scripts. Stops the running timer (no
+     * prompts) and reports the resulting entry as JSON.
+     */
+    private function executeNonInteractive(InputInterface $input, OutputInterface $output, bool $json): int
+    {
+        try {
+            $clockifyConfig = $this->configManager->getClockifyConfig();
+            $userId = $clockifyConfig['user_id'] ?? '';
+
+            $current = $userId ? $this->clockifyClient->getCurrentTimeEntry($userId) : null;
+            if (!$current) {
+                $this->configManager->clearActiveTimer();
+
+                return $this->emit($output, $json, ['stopped' => false, 'message' => 'No active timer.']);
+            }
+
+            $stopTime = $this->getStopTime($input, $output);
+            $stopped = $this->clockifyClient->stopTimer($userId, TimeHelper::toUtcTime($stopTime)->toISOString());
+
+            $this->configManager->clearActiveTimer();
+
+            $start = $stopped['timeInterval']['start'] ?? $current['timeInterval']['start'] ?? null;
+            $end = $stopped['timeInterval']['end'] ?? null;
+            $durationMinutes = ($start && $end)
+                ? abs(Carbon::parse($end)->utc()->diffInMinutes(Carbon::parse($start)->utc()))
+                : null;
+
+            return $this->emit($output, $json, [
+                'stopped' => true,
+                'id' => $stopped['id'] ?? $current['id'],
+                'start' => $start,
+                'end' => $end,
+                'durationMinutes' => $durationMinutes !== null ? (int) $durationMinutes : null,
+            ]);
+        } catch (RuntimeException $e) {
+            if ($json) {
+                $output->writeln(json_encode(['error' => $e->getMessage()], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+            } else {
+                $output->writeln('<error>' . $e->getMessage() . '</error>');
+            }
+
+            return Command::FAILURE;
+        }
+    }
+
+    private function emit(OutputInterface $output, bool $json, array $payload): int
+    {
+        if ($json) {
+            $output->writeln(json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+        } else {
+            $output->writeln((string) ($payload['id'] ?? ($payload['message'] ?? '')));
+        }
+
+        return Command::SUCCESS;
     }
 
     private function initializeClient(): void

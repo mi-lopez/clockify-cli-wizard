@@ -94,7 +94,7 @@ class ClockifyClient
     /**
      * Get a specific page of projects.
      */
-    public function getProjectsPage(int $page = 1, int $pageSize = null, bool $includeArchived = false): array
+    public function getProjectsPage(int $page = 1, ?int $pageSize = null, bool $includeArchived = false): array
     {
         $pageSize = $pageSize ?? self::DEFAULT_PAGE_SIZE;
         $pageSize = min($pageSize, self::MAX_PAGE_SIZE); // Respect Clockify's limits
@@ -183,7 +183,7 @@ class ClockifyClient
     /**
      * Get a specific page of tasks.
      */
-    public function getTasksPage(string $projectId, int $page = 1, int $pageSize = null): array
+    public function getTasksPage(string $projectId, int $page = 1, ?int $pageSize = null): array
     {
         $pageSize = $pageSize ?? self::DEFAULT_PAGE_SIZE;
         $pageSize = min($pageSize, self::MAX_PAGE_SIZE);
@@ -237,7 +237,109 @@ class ClockifyClient
         }
     }
 
-    public function startTimer(string $projectId, ?string $taskId = null, ?string $description = null): array
+    /**
+     * Get all tags (Clockify's equivalent of labels) with automatic pagination.
+     */
+    public function getTags(bool $includeArchived = false): array
+    {
+        $allTags = [];
+        $page = 1;
+        $pageSize = self::MAX_PAGE_SIZE;
+
+        do {
+            try {
+                $queryParams = [
+                    'page' => $page,
+                    'page-size' => $pageSize,
+                ];
+
+                if (!$includeArchived) {
+                    $queryParams['archived'] = 'false';
+                }
+
+                $query = http_build_query($queryParams);
+                $url = self::API_BASE_URL . "/workspaces/{$this->workspaceId}/tags?{$query}";
+
+                $response = $this->httpClient->get($url);
+                $tags = json_decode($response->getBody()->getContents(), true);
+            } catch (GuzzleException $e) {
+                throw new RuntimeException('Failed to get tags: ' . $e->getMessage());
+            }
+
+            $allTags = array_merge($allTags, $tags);
+            $hasMore = count($tags) === $pageSize;
+            $page++;
+        } while ($hasMore);
+
+        return $allTags;
+    }
+
+    public function findTagByName(string $name): ?array
+    {
+        foreach ($this->getTags() as $tag) {
+            if (strcasecmp($tag['name'], $name) === 0) {
+                return $tag;
+            }
+        }
+
+        return null;
+    }
+
+    public function createTag(string $name): array
+    {
+        try {
+            $response = $this->httpClient->post(
+                self::API_BASE_URL . "/workspaces/{$this->workspaceId}/tags",
+                ['json' => ['name' => $name]]
+            );
+
+            return json_decode($response->getBody()->getContents(), true);
+        } catch (GuzzleException $e) {
+            throw new RuntimeException('Failed to create tag: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Resolve a list of tag names to their IDs, creating any that don't exist yet.
+     *
+     * @param string[] $tagNames
+     *
+     * @return string[] tag IDs
+     */
+    public function resolveTagIds(array $tagNames): array
+    {
+        if (empty($tagNames)) {
+            return [];
+        }
+
+        $existing = $this->getTags(true);
+        $byName = [];
+        foreach ($existing as $tag) {
+            $byName[mb_strtolower($tag['name'])] = $tag['id'];
+        }
+
+        $ids = [];
+        foreach ($tagNames as $name) {
+            $name = trim($name);
+            if ($name === '') {
+                continue;
+            }
+
+            $key = mb_strtolower($name);
+            if (isset($byName[$key])) {
+                $ids[] = $byName[$key];
+                continue;
+            }
+
+            $created = $this->createTag($name);
+            $byName[$key] = $created['id'];
+            $ids[] = $created['id'];
+        }
+
+        return array_values(array_unique($ids));
+    }
+
+    public function startTimer(string $projectId, ?string $taskId = null, ?string $description = null, array $tagIds = []): array
     {
         $data = [
             'start' => Carbon::now()->utc()->toISOString(), // Force UTC
@@ -250,6 +352,10 @@ class ClockifyClient
 
         if ($description) {
             $data['description'] = $description;
+        }
+
+        if (!empty($tagIds)) {
+            $data['tagIds'] = array_values($tagIds);
         }
 
         try {
@@ -441,7 +547,7 @@ class ClockifyClient
     /**
      * Get a specific page of time entries with optional hydration.
      */
-    public function getTimeEntriesPage(string $userId, int $page = 1, int $pageSize = null, ?Carbon $start = null, ?Carbon $end = null, bool $hydrate = false): array
+    public function getTimeEntriesPage(string $userId, int $page = 1, ?int $pageSize = null, ?Carbon $start = null, ?Carbon $end = null, bool $hydrate = false): array
     {
         $pageSize = $pageSize ?? self::DEFAULT_PAGE_SIZE;
         $pageSize = min($pageSize, self::MAX_PAGE_SIZE);
