@@ -46,7 +46,7 @@ Configure Clockify CLI Wizard:
   clockify-wizard configure --jira-only
 
 <info>You will need:</info>
-  • Clockify API key (from clockify.me/user/settings)
+  • Clockify API key (from app.clockify.me/manage-api-keys)
   • Clockify workspace ID
   • Jira URL, email, and API token (optional)
 
@@ -170,7 +170,7 @@ Configure Clockify CLI Wizard:
     {
         ConsoleHelper::displaySection($output, 'Clockify Configuration', '🕐');
 
-        $output->writeln('<fg=yellow>Get your API key from: https://clockify.me/user/settings</>');
+        $output->writeln('<fg=yellow>Get your API key from: https://app.clockify.me/manage-api-keys</>');
         $output->writeln('');
 
         // API Key

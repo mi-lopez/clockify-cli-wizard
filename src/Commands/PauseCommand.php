@@ -62,7 +62,7 @@ its context so `resume` can restart it):
             $client = new ClockifyClient($clockifyConfig['api_key'], $clockifyConfig['workspace_id']);
             $userId = $clockifyConfig['user_id'] ?? '';
 
-            $current = $userId ? $client->getCurrentTimeEntry($userId) : null;
+            $current = $userId ? $client->getCurrentTimeEntryWithFallback($userId) : null;
             if (!$current) {
                 return $this->emit($output, $json, ['paused' => false, 'message' => 'No running timer to pause.']);
             }

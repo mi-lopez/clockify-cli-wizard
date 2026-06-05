@@ -141,7 +141,7 @@ Start a timer for time tracking:
             $userId = $clockifyConfig['user_id'] ?? '';
 
             // Refuse to silently replace a running timer unless --force.
-            $running = $userId ? $this->clockifyClient->getCurrentTimeEntry($userId) : null;
+            $running = $userId ? $this->clockifyClient->getCurrentTimeEntryWithFallback($userId) : null;
             if ($running && !$input->getOption('force')) {
                 throw new RuntimeException(
                     'A timer is already running (id ' . $running['id'] . '). Use --force to stop it and start a new one.'
@@ -154,7 +154,8 @@ Start a timer for time tracking:
                 $input->getOption('project'),
                 $input->getOption('description'),
                 $this->parseTags($input->getOption('tags')),
-                $input->getOption('task-name')
+                $input->getOption('task-name'),
+                !$dryRun
             );
 
             $project = $taskData['clockify_project'];

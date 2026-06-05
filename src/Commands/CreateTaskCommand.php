@@ -147,7 +147,7 @@ Create a new task in Clockify:
 
             $project = $this->resolveProjectNonInteractive($ticketId, $projectKey, $projectOption);
 
-            if ($projectOption && $projectKey) {
+            if (!$dryRun && $projectOption && $projectKey) {
                 $this->configManager->addProjectMapping($projectKey, $project['id']);
             }
 

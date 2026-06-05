@@ -80,7 +80,7 @@ clockify-wizard configure
 The wizard will guide you through:
 
 1. **Clockify API Setup**
-    - API key (from [clockify.me/user/settings](https://clockify.me/user/settings))
+    - API key (from [app.clockify.me/manage-api-keys](https://app.clockify.me/manage-api-keys))
     - Workspace selection
     - User validation
 

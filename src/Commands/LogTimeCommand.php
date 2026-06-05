@@ -150,7 +150,9 @@ Log time to Clockify with various input methods:
                 (string) $ticketId,
                 $input->getOption('project'),
                 $input->getOption('description'),
-                $this->parseTags($input->getOption('tags'))
+                $this->parseTags($input->getOption('tags')),
+                null,
+                !$dryRun
             );
 
             $project = $taskData['clockify_project'];

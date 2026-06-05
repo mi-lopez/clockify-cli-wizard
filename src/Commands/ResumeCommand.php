@@ -66,7 +66,7 @@ Resume a paused timer:
             $clockifyConfig = $this->configManager->getClockifyConfig();
             $userId = $clockifyConfig['user_id'] ?? '';
 
-            $running = $userId ? $this->clockifyClient->getCurrentTimeEntry($userId) : null;
+            $running = $userId ? $this->clockifyClient->getCurrentTimeEntryWithFallback($userId) : null;
             if ($running && !$input->getOption('force')) {
                 throw new RuntimeException(
                     'A timer is already running (id ' . $running['id'] . '). Use --force to stop it and resume.'

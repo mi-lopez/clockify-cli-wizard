@@ -131,7 +131,7 @@ Stop the active timer:
             $clockifyConfig = $this->configManager->getClockifyConfig();
             $userId = $clockifyConfig['user_id'] ?? '';
 
-            $current = $userId ? $this->clockifyClient->getCurrentTimeEntry($userId) : null;
+            $current = $userId ? $this->clockifyClient->getCurrentTimeEntryWithFallback($userId) : null;
             if (!$current) {
                 $this->configManager->clearActiveTimer();
 

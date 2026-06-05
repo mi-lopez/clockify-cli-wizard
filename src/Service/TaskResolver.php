@@ -50,12 +50,19 @@ class TaskResolver
      *     tag_ids: string[]
      * }
      */
+    /**
+     * @param bool $write When false (dry-run), nothing is mutated: the project
+     *                     mapping is not persisted, a missing Clockify task is
+     *                     NOT created (returned with a null id), and missing
+     *                     tags are NOT created.
+     */
     public function resolve(
         string $ticketKey,
         ?string $projectOption = null,
         ?string $description = null,
         array $tagNames = [],
-        ?string $customTaskName = null
+        ?string $customTaskName = null,
+        bool $write = true
     ): array {
         $ticketKey = trim($ticketKey);
         if ($ticketKey === '') {
@@ -89,13 +96,13 @@ class TaskResolver
         $result['clockify_project'] = $project;
 
         // Persist the mapping so subsequent calls for this Jira project are automatic.
-        if ($projectOption && $result['project_key']) {
+        if ($write && $projectOption && $result['project_key']) {
             $this->configManager->addProjectMapping($result['project_key'], $project['id']);
         }
 
         $taskName = $customTaskName ?: ($result['summary'] ? "{$ticketKey} {$result['summary']}" : $ticketKey);
-        $result['clockify_task'] = $this->resolveTask($project['id'], $taskName);
-        $result['tag_ids'] = $this->clockifyClient->resolveTagIds($tagNames);
+        $result['clockify_task'] = $this->resolveTask($project['id'], $taskName, $write);
+        $result['tag_ids'] = $this->resolveTags($tagNames, $write);
 
         return $result;
     }
@@ -145,14 +152,51 @@ class TaskResolver
         return null;
     }
 
-    private function resolveTask(string $projectId, string $taskName): array
+    private function resolveTask(string $projectId, string $taskName, bool $write): array
     {
         $existing = $this->clockifyClient->findTask($projectId, $taskName);
         if ($existing) {
             return $existing;
         }
 
+        if (!$write) {
+            // Dry-run: report what would be created without creating it.
+            return ['id' => null, 'name' => $taskName, 'status' => null, '_wouldCreate' => true];
+        }
+
         return $this->clockifyClient->createTask($projectId, $taskName);
+    }
+
+    /**
+     * @param string[] $tagNames
+     *
+     * @return string[]
+     */
+    private function resolveTags(array $tagNames, bool $write): array
+    {
+        if (empty($tagNames)) {
+            return [];
+        }
+
+        if ($write) {
+            return $this->clockifyClient->resolveTagIds($tagNames);
+        }
+
+        // Dry-run: only map names that already exist; do not create tags.
+        $byName = [];
+        foreach ($this->clockifyClient->getTags(true) as $tag) {
+            $byName[mb_strtolower($tag['name'])] = $tag['id'];
+        }
+
+        $ids = [];
+        foreach ($tagNames as $name) {
+            $key = mb_strtolower(trim($name));
+            if ($key !== '' && isset($byName[$key])) {
+                $ids[] = $byName[$key];
+            }
+        }
+
+        return array_values(array_unique($ids));
     }
 
     /**

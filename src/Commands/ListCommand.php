@@ -142,7 +142,7 @@ class ListCommand extends Command
 
             case 'current':
                 $userId = $clockifyConfig['user_id'] ?? '';
-                $current = $userId ? $client->getCurrentTimeEntry($userId) : null;
+                $current = $userId ? $client->getCurrentTimeEntryWithFallback($userId) : null;
 
                 if (!$current) {
                     return ['running' => false, 'entry' => null];
