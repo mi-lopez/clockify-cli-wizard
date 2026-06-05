@@ -131,7 +131,7 @@ class MapCommand extends Command
 
     private function resolveProject(ClockifyClient $client, string $needle): array
     {
-        foreach ($client->getProjects(true) as $project) {
+        foreach ($client->getProjects() as $project) {
             if ($project['id'] === $needle || strcasecmp($project['name'], $needle) === 0) {
                 return $project;
             }

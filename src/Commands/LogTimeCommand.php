@@ -240,7 +240,7 @@ Log time to Clockify with various input methods:
                 throw new RuntimeException('Start time must be before end time.');
             }
 
-            return ['start' => $startTime, 'end' => $endTime, 'minutes' => (int) $endTime->diffInMinutes($startTime)];
+            return ['start' => $startTime, 'end' => $endTime, 'minutes' => (int) abs($endTime->diffInMinutes($startTime))];
         }
 
         throw new RuntimeException('Provide a duration (e.g., 1h30m) or both --start and --end.');
@@ -331,7 +331,7 @@ Log time to Clockify with various input methods:
                 throw new RuntimeException('Start time must be before end time');
             }
 
-            $minutes = $endTime->diffInMinutes($startTime);
+            $minutes = abs($endTime->diffInMinutes($startTime));
 
             $timeData = [
                 'start' => $startTime,
@@ -389,7 +389,7 @@ Log time to Clockify with various input methods:
 
                 $startTime = TimeHelper::parseTime($startInput);
                 $endTime = $endInput === 'now' ? TimeHelper::now() : TimeHelper::parseTime($endInput);
-                $minutes = $endTime->diffInMinutes($startTime);
+                $minutes = abs($endTime->diffInMinutes($startTime));
                 break;
 
             case 'suggestions':
@@ -407,7 +407,7 @@ Log time to Clockify with various input methods:
 
                 $startTime = TimeHelper::parseTime($selectedSuggestion['start_time']);
                 $endTime = TimeHelper::now();
-                $minutes = $endTime->diffInMinutes($startTime);
+                $minutes = abs($endTime->diffInMinutes($startTime));
                 break;
 
             default:
@@ -439,7 +439,7 @@ Log time to Clockify with various input methods:
 
                 // Only suggest if start time is before current time and within reasonable range
                 if ($start->lt($now)) {
-                    $duration = $now->diffInMinutes($start);
+                    $duration = abs($now->diffInMinutes($start));
 
                     // Only suggest if duration is reasonable (max 12 hours)
                     if ($duration > 0 && $duration <= 720) {
