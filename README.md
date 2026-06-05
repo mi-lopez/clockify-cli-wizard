@@ -6,9 +6,16 @@
 
 > A beautiful, intelligent CLI wizard for seamless time tracking with Clockify and Jira integration.
 
-Transform your time tracking workflow with smart automation, Git integration, and an intuitive command-line interface designed for developers.
+Transform your time tracking workflow with smart automation, Git integration, and an intuitive command-line interface designed for developers — fully scriptable with a non-interactive JSON mode for AI agents.
 
 ## ✨ Features
+
+### 🤖 **Automation & AI Agents**
+- **Non-interactive mode** — every agent-facing command runs without prompts
+- **JSON output** (`--json`) for scripts and AI agents to parse
+- **`--dry-run`** to preview writes without billing time
+- **Discovery (`list`)** of projects/tasks/tags/workspaces/current as JSON
+- **Jira → Clockify** task mirroring for unattended, billable time tracking
 
 ### 🚀 **Smart Time Tracking**
 - **Auto-detection** from Git branch names (extracts ticket IDs like `CAM-451`, `PROJ-123`)
@@ -450,7 +457,8 @@ src/
 ├── Commands/        # Console commands
 ├── Config/          # Configuration management
 ├── Console/         # Application setup
-└── Helper/          # Utility classes
+├── Helper/          # Utility classes
+└── Service/         # Prompt-free resolution (TaskResolver)
 
 bin/
 └── clockify-wizard  # Executable script
