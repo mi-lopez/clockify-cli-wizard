@@ -40,10 +40,10 @@ class Installer
         $io->write('<info>✅ Clockify CLI Wizard updated successfully!</info>');
         $io->write('');
         $io->write('<comment>What\'s new in this version:</comment>');
-        $io->write('  • Enhanced time parsing and suggestions');
-        $io->write('  • Improved Git integration');
-        $io->write('  • Better project mapping');
-        $io->write('  • New reporting features');
+        $io->write('  • Non-interactive / JSON mode for AI agents & scripts (--json, --dry-run)');
+        $io->write('  • New commands: list (JSON discovery), map, pause, resume');
+        $io->write('  • Tags/labels support on timers and time entries');
+        $io->write('  • Combined Jira → Clockify task creation for billing');
         $io->write('');
         $io->write('<comment>Check your configuration:</comment>');
         $io->write('  Run: <info>./vendor/bin/clockify-wizard status</info>');

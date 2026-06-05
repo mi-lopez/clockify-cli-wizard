@@ -11,6 +11,7 @@ use MiLopez\ClockifyWizard\Config\ConfigManager;
 use MiLopez\ClockifyWizard\Helper\ConsoleHelper;
 use MiLopez\ClockifyWizard\Helper\GitHelper;
 use MiLopez\ClockifyWizard\Helper\TimeHelper;
+use MiLopez\ClockifyWizard\Service\TaskResolver;
 use RuntimeException;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
@@ -50,6 +51,9 @@ class LogTimeCommand extends Command
             ->addOption('end-now', null, InputOption::VALUE_NONE, 'Use current time as end time')
             ->addOption('auto', 'a', InputOption::VALUE_NONE, 'Auto-detect task from Git branch')
             ->addOption('interactive', 'i', InputOption::VALUE_NONE, 'Use interactive wizard mode')
+            ->addOption('tags', null, InputOption::VALUE_REQUIRED, 'Comma-separated tags/labels (created if missing)')
+            ->addOption('json', null, InputOption::VALUE_NONE, 'Output result as JSON (non-interactive)')
+            ->addOption('dry-run', null, InputOption::VALUE_NONE, 'Show what would be logged without writing to Clockify')
             ->setHelp('
 Log time to Clockify with various input methods:
 
@@ -62,6 +66,11 @@ Log time to Clockify with various input methods:
   clockify-wizard log 2h --start 9am --task CAM-451
   clockify-wizard log --start 9am --end 11am --task CAM-451
   clockify-wizard log 2h --end-now --task CAM-451
+
+<info>Non-interactive (AI agents / scripts) — measured-duration billing:</info>
+  clockify-wizard log 1h30m --task CAM-451 --json
+  clockify-wizard log 45m --task CAM-451 --tags "ai-agent" --json
+  clockify-wizard log 2h --task CAM-451 --dry-run
 
 <info>Auto-detection:</info>
   clockify-wizard log 2h --auto  # Detects task from Git branch
@@ -79,6 +88,13 @@ Log time to Clockify with various input methods:
 
             // Initialize timezone from config
             $this->configManager->initializeTimezone();
+
+            $json = (bool) $input->getOption('json');
+            $dryRun = (bool) $input->getOption('dry-run');
+
+            if ($json || $dryRun || (!$input->getOption('interactive') && !$input->isInteractive())) {
+                return $this->executeNonInteractive($input, $output, $json, $dryRun);
+            }
 
             ConsoleHelper::displayHeader($output, 'Time Logger Wizard');
 
@@ -108,6 +124,149 @@ Log time to Clockify with various input methods:
 
             return Command::FAILURE;
         }
+    }
+
+    /**
+     * Non-interactive path for AI agents / scripts. This is the recommended
+     * billing flow for agents: the agent measures how long the task took and
+     * logs that explicit duration (no dangling live timer).
+     */
+    private function executeNonInteractive(InputInterface $input, OutputInterface $output, bool $json, bool $dryRun): int
+    {
+        try {
+            $ticketId = $input->getOption('task');
+            if (!$ticketId && ($input->getOption('auto') || GitHelper::isGitRepository())) {
+                $ticketId = GitHelper::extractTicketIdFromBranch();
+            }
+
+            if (!$ticketId) {
+                throw new RuntimeException('A task is required (--task=KEY or --auto from a Git branch).');
+            }
+
+            $timeData = $this->buildTimeDataNonInteractive($input);
+
+            $resolver = new TaskResolver($this->clockifyClient, $this->configManager, $this->jiraClient);
+            $taskData = $resolver->resolve(
+                (string) $ticketId,
+                $input->getOption('project'),
+                $input->getOption('description'),
+                $this->parseTags($input->getOption('tags')),
+                null,
+                !$dryRun
+            );
+
+            $project = $taskData['clockify_project'];
+            $task = $taskData['clockify_task'];
+
+            $startUtc = TimeHelper::toUtcTime($timeData['start']);
+            $endUtc = TimeHelper::toUtcTime($timeData['end']);
+
+            if ($dryRun) {
+                return $this->emit($output, $json, [
+                    'dryRun' => true,
+                    'projectId' => $project['id'],
+                    'projectName' => $project['name'],
+                    'taskId' => $task['id'],
+                    'taskName' => $task['name'],
+                    'description' => $taskData['description'],
+                    'start' => $startUtc->toISOString(),
+                    'end' => $endUtc->toISOString(),
+                    'durationMinutes' => $timeData['minutes'],
+                    'tagIds' => $taskData['tag_ids'],
+                ]);
+            }
+
+            $entryData = [
+                'start' => $startUtc->toISOString(),
+                'end' => $endUtc->toISOString(),
+                'projectId' => $project['id'],
+                'taskId' => $task['id'],
+                'description' => $taskData['description'],
+            ];
+            if (!empty($taskData['tag_ids'])) {
+                $entryData['tagIds'] = $taskData['tag_ids'];
+            }
+
+            $entry = $this->clockifyClient->createTimeEntry($entryData);
+
+            return $this->emit($output, $json, [
+                'id' => $entry['id'],
+                'projectId' => $project['id'],
+                'projectName' => $project['name'],
+                'taskId' => $task['id'],
+                'taskName' => $task['name'],
+                'description' => $taskData['description'],
+                'start' => $entry['timeInterval']['start'] ?? $startUtc->toISOString(),
+                'end' => $entry['timeInterval']['end'] ?? $endUtc->toISOString(),
+                'durationMinutes' => $timeData['minutes'],
+                'tagIds' => $taskData['tag_ids'],
+            ]);
+        } catch (RuntimeException $e) {
+            if ($json) {
+                $output->writeln(json_encode(['error' => $e->getMessage()], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+            } else {
+                $output->writeln('<error>' . $e->getMessage() . '</error>');
+            }
+
+            return Command::FAILURE;
+        }
+    }
+
+    /**
+     * @return array{start: \Carbon\Carbon, end: \Carbon\Carbon, minutes: int}
+     */
+    private function buildTimeDataNonInteractive(InputInterface $input): array
+    {
+        $duration = $input->getArgument('duration');
+        $start = $input->getOption('start');
+        $end = $input->getOption('end');
+
+        if ($duration && ($start || $end)) {
+            throw new RuntimeException('Cannot specify both duration and start/end times.');
+        }
+
+        if ($duration) {
+            $minutes = TimeHelper::parseDuration($duration);
+            $endTime = TimeHelper::now();
+            $startTime = $endTime->copy()->subMinutes($minutes);
+
+            return ['start' => $startTime, 'end' => $endTime, 'minutes' => (int) $minutes];
+        }
+
+        if ($start && $end) {
+            $startTime = TimeHelper::parseTime($start);
+            $endTime = TimeHelper::parseTime($end);
+            if ($startTime->gte($endTime)) {
+                throw new RuntimeException('Start time must be before end time.');
+            }
+
+            return ['start' => $startTime, 'end' => $endTime, 'minutes' => (int) abs($endTime->diffInMinutes($startTime))];
+        }
+
+        throw new RuntimeException('Provide a duration (e.g., 1h30m) or both --start and --end.');
+    }
+
+    private function emit(OutputInterface $output, bool $json, array $payload): int
+    {
+        if ($json) {
+            $output->writeln(json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+        } else {
+            $output->writeln((string) ($payload['id'] ?? ''));
+        }
+
+        return Command::SUCCESS;
+    }
+
+    /**
+     * @return string[]
+     */
+    private function parseTags(?string $raw): array
+    {
+        if (!$raw) {
+            return [];
+        }
+
+        return array_values(array_filter(array_map('trim', explode(',', $raw)), static fn ($t) => $t !== ''));
     }
 
     private function initializeClients(): void
@@ -172,7 +331,7 @@ Log time to Clockify with various input methods:
                 throw new RuntimeException('Start time must be before end time');
             }
 
-            $minutes = $endTime->diffInMinutes($startTime);
+            $minutes = abs($endTime->diffInMinutes($startTime));
 
             $timeData = [
                 'start' => $startTime,
@@ -230,7 +389,7 @@ Log time to Clockify with various input methods:
 
                 $startTime = TimeHelper::parseTime($startInput);
                 $endTime = $endInput === 'now' ? TimeHelper::now() : TimeHelper::parseTime($endInput);
-                $minutes = $endTime->diffInMinutes($startTime);
+                $minutes = abs($endTime->diffInMinutes($startTime));
                 break;
 
             case 'suggestions':
@@ -248,7 +407,7 @@ Log time to Clockify with various input methods:
 
                 $startTime = TimeHelper::parseTime($selectedSuggestion['start_time']);
                 $endTime = TimeHelper::now();
-                $minutes = $endTime->diffInMinutes($startTime);
+                $minutes = abs($endTime->diffInMinutes($startTime));
                 break;
 
             default:
@@ -280,7 +439,7 @@ Log time to Clockify with various input methods:
 
                 // Only suggest if start time is before current time and within reasonable range
                 if ($start->lt($now)) {
-                    $duration = $now->diffInMinutes($start);
+                    $duration = abs($now->diffInMinutes($start));
 
                     // Only suggest if duration is reasonable (max 12 hours)
                     if ($duration > 0 && $duration <= 720) {

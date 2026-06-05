@@ -10,6 +10,7 @@ use MiLopez\ClockifyWizard\Client\JiraClient;
 use MiLopez\ClockifyWizard\Config\ConfigManager;
 use MiLopez\ClockifyWizard\Helper\ConsoleHelper;
 use MiLopez\ClockifyWizard\Helper\GitHelper;
+use MiLopez\ClockifyWizard\Service\TaskResolver;
 use RuntimeException;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
@@ -44,6 +45,11 @@ class StartCommand extends Command
             ->addOption('project', 'p', InputOption::VALUE_REQUIRED, 'Clockify project ID or name')
             ->addOption('description', 'd', InputOption::VALUE_REQUIRED, 'Description for the timer')
             ->addOption('auto', 'a', InputOption::VALUE_NONE, 'Auto-detect task from Git branch')
+            ->addOption('task-name', null, InputOption::VALUE_REQUIRED, 'Custom Clockify task name')
+            ->addOption('tags', null, InputOption::VALUE_REQUIRED, 'Comma-separated tags/labels (created if missing)')
+            ->addOption('force', 'f', InputOption::VALUE_NONE, 'Stop any running timer before starting')
+            ->addOption('json', null, InputOption::VALUE_NONE, 'Output result as JSON (non-interactive)')
+            ->addOption('dry-run', null, InputOption::VALUE_NONE, 'Show what would be started without writing to Clockify')
             ->setHelp('
 Start a timer for time tracking:
 
@@ -55,6 +61,11 @@ Start a timer for time tracking:
 <info>With options:</info>
   clockify-wizard start CAM-451 --project "My Project"
   clockify-wizard start CAM-451 --description "Working on feature implementation"
+
+<info>Non-interactive (AI agents / scripts):</info>
+  clockify-wizard start CAM-451 --json
+  clockify-wizard start CAM-451 --tags "ai-agent,backend" --json
+  clockify-wizard start CAM-451 --force --json   # replace a running timer
             ');
     }
 
@@ -62,6 +73,13 @@ Start a timer for time tracking:
     {
         try {
             $this->initializeClients();
+
+            $json = (bool) $input->getOption('json');
+            $dryRun = (bool) $input->getOption('dry-run');
+
+            if ($json || $dryRun || !$input->isInteractive()) {
+                return $this->executeNonInteractive($input, $output, $json, $dryRun);
+            }
 
             ConsoleHelper::displayHeader($output, 'Start Timer');
 
@@ -101,6 +119,125 @@ Start a timer for time tracking:
 
             return Command::FAILURE;
         }
+    }
+
+    /**
+     * Non-interactive path for AI agents / scripts. Resolves the task from
+     * flags + saved mappings (never prompts) and starts a live timer.
+     */
+    private function executeNonInteractive(InputInterface $input, OutputInterface $output, bool $json, bool $dryRun): int
+    {
+        try {
+            $ticketId = $input->getArgument('task');
+            if (!$ticketId && ($input->getOption('auto') || GitHelper::isGitRepository())) {
+                $ticketId = GitHelper::extractTicketIdFromBranch();
+            }
+
+            if (!$ticketId) {
+                throw new RuntimeException('A task id is required (argument or --auto from a Git branch).');
+            }
+
+            $clockifyConfig = $this->configManager->getClockifyConfig();
+            $userId = $clockifyConfig['user_id'] ?? '';
+
+            // Refuse to silently replace a running timer unless --force.
+            $running = $userId ? $this->clockifyClient->getCurrentTimeEntryWithFallback($userId) : null;
+            if ($running && !$input->getOption('force')) {
+                throw new RuntimeException(
+                    'A timer is already running (id ' . $running['id'] . '). Use --force to stop it and start a new one.'
+                );
+            }
+
+            $resolver = new TaskResolver($this->clockifyClient, $this->configManager, $this->jiraClient);
+            $taskData = $resolver->resolve(
+                (string) $ticketId,
+                $input->getOption('project'),
+                $input->getOption('description'),
+                $this->parseTags($input->getOption('tags')),
+                $input->getOption('task-name'),
+                !$dryRun
+            );
+
+            $project = $taskData['clockify_project'];
+            $task = $taskData['clockify_task'];
+
+            if ($dryRun) {
+                return $this->emit($output, $json, [
+                    'dryRun' => true,
+                    'projectId' => $project['id'],
+                    'projectName' => $project['name'],
+                    'taskId' => $task['id'],
+                    'taskName' => $task['name'],
+                    'description' => $taskData['description'],
+                    'tagIds' => $taskData['tag_ids'],
+                    'willStopRunning' => $running ? $running['id'] : null,
+                ]);
+            }
+
+            if ($running && $userId) {
+                $this->clockifyClient->stopTimer($userId);
+                $this->configManager->clearActiveTimer();
+            }
+
+            $timeEntry = $this->clockifyClient->startTimer(
+                $project['id'],
+                $task['id'],
+                $taskData['description'],
+                $taskData['tag_ids']
+            );
+
+            $this->configManager->saveActiveTimer([
+                'id' => $timeEntry['id'],
+                'project' => $project['name'],
+                'task' => $task['name'],
+                'start' => $timeEntry['timeInterval']['start'],
+                'description' => $taskData['description'],
+                'project_id' => $project['id'],
+                'task_id' => $task['id'],
+            ]);
+
+            return $this->emit($output, $json, [
+                'id' => $timeEntry['id'],
+                'projectId' => $project['id'],
+                'projectName' => $project['name'],
+                'taskId' => $task['id'],
+                'taskName' => $task['name'],
+                'description' => $taskData['description'],
+                'start' => $timeEntry['timeInterval']['start'],
+                'tagIds' => $taskData['tag_ids'],
+            ]);
+        } catch (RuntimeException $e) {
+            if ($json) {
+                $output->writeln(json_encode(['error' => $e->getMessage()], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+            } else {
+                $output->writeln('<error>' . $e->getMessage() . '</error>');
+            }
+
+            return Command::FAILURE;
+        }
+    }
+
+    private function emit(OutputInterface $output, bool $json, array $payload): int
+    {
+        if ($json) {
+            $output->writeln(json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+        } else {
+            $output->writeln((string) ($payload['id'] ?? ''));
+        }
+
+        return Command::SUCCESS;
+    }
+
+    /**
+     * @return string[]
+     */
+    private function parseTags(?string $raw): array
+    {
+        if (!$raw) {
+            return [];
+        }
+
+        return array_values(array_filter(array_map('trim', explode(',', $raw)), static fn ($t) => $t !== ''));
     }
 
     private function initializeClients(): void
